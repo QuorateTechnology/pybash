@@ -1,7 +1,6 @@
 import os
 import re
 import subprocess
-import sys
 import threading
 
 # TODO: .kaldi-binary(woth, kaldi, options)
@@ -48,7 +47,7 @@ class ReadableGenerator(object):
     def __iter__(self):
         return self.iterator
 
-    def read(self, size):
+    def read(self, size=-1):
         data = self.residual
 
         while size < 0 or len(data) < size:
@@ -106,12 +105,10 @@ class PyBashCall(PyBashOperation):
                 source = stdin
                 stdin = subprocess.PIPE
 
-        print >> sys.stderr, type(self), ' '.join(self.arguments)
         self.process = subprocess.Popen(self.arguments, bufsize=self.buffer_size, stdin=stdin, stdout=subprocess.PIPE)
 
         if source is not None:
             name = self.arguments[0] + '_read_write_thread'
-            print >> sys.stderr, type(self), 'Starting thread', name
             self.thread = threading.Thread(target=read_write_thread, name=name, args=(source, self.process.stdin),
                                            kwargs=dict(buffer_size=self.buffer_size))
             self.thread.daemon = True
@@ -162,158 +159,3 @@ class PyBashGrepSimple(PyBashOperation):
 
     def stream(self):
         return ReadableGenerator(line for line in self.source.stream() if self.pattern.search(line) is not None)
-
-
-def main():
-    print 'Test 1'
-    pipeline = PyBashPipeline.cat_call('D:\\source.txt', 'D:\\sink.txt') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel')
-
-    for line in pipeline.stream():
-        print line,
-
-    print 'Test 2'
-    pipeline = PyBashPipeline.cat_call('D:\\source.txt', 'D:\\sink.txt') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel')
-
-    for line in pipeline.stream():
-        print line,
-
-    print 'Test 3'
-    pipeline = PyBashPipeline.cat_call('D:\\source.txt', 'D:\\sink.txt') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel')
-
-    for line in pipeline.stream():
-        print line,
-
-    print 'Test 4'
-    pipeline = PyBashPipeline.cat_call('D:\\source.txt', 'D:\\sink.txt') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel')
-
-    for line in pipeline.stream():
-        print line,
-
-    print 'Test 5'
-    pipeline = PyBashPipeline.cat_simple('D:\\source.txt', 'D:\\sink.txt') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel')
-
-    for line in pipeline.stream():
-        print line,
-
-    print 'Test 6'
-    pipeline = PyBashPipeline.cat_simple('D:\\source.txt', 'D:\\sink.txt') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel')
-
-    for line in pipeline.stream():
-        print line,
-
-    print 'Test 7'
-    pipeline = PyBashPipeline.cat_simple('D:\\source.txt', 'D:\\sink.txt') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel')
-
-    for line in pipeline.stream():
-        print line,
-
-    print 'Test 8'
-    pipeline = PyBashPipeline.cat_simple('D:\\source.txt', 'D:\\sink.txt') \
-        .grep_call('neque vel') \
-        .grep_simple('neque vel') \
-        .grep_simple('neque vel') \
-        .grep_call('neque vel')
-
-    for line in pipeline.stream():
-        print line,
-
-
-if __name__ == "__main__":
-    main()
-
-# class PyBashGrep(object):
-#     def __init__(self, pattern):
-#         self.pattern = re.compile(pattern)
-#
-#     def advance(self, input_stream):
-#         for line in input_stream():
-#             if self.pattern.match(line) is not None:
-#                 yield line
-#
-#
-# class PyBashTo(object):
-#     def __init__(self, source, output_file_path):
-#         self.source = source
-#         self.output_file_path = output_file_path
-#
-#     def execute(self):
-#         with open(self.output_file_path, 'wt') as output_file:
-#             for line in self.source.advance():
-#                 output_file.write(line)
-#                 output_file.write('\n')
-#
-#
-# def main():
-#     PyBashPipeline.cat('D:/source.txt') \
-#         .grep(r'book') \
-#         .to('D:/temp.txt') \
-#         .stream()
-#
-#
-# main()
-#
-#
-# class MultiFile(io.RawIOBase):
-#     def __init__(self, buffer_size=DEFAULT_BUFFER_SIZE, *input_file_paths):
-#         super(MultiFile, self).__init__()
-#         self.input_file_paths = input_file_paths
-#         self.buffer_size = buffer_size
-#
-#     def read(self, n):
-#         for input_file_path in self.input_file_paths:
-#             input_file_path = os.path.expanduser(input_file_path)
-#             input_file_path = os.path.realpath(input_file_path)
-#
-#             with open(input_file_path, 'rt') as input_file:
-#                 while True:
-#                     buffer = sys.stdin.read(self.buffer_size)
-#
-#                     if len(buffer) == 0:
-#                         break
-#
-#                     sys.stdout.write(buffer)
-#         return super(MultiFile, self).read(*args, **kwargs)
-#
-#
-# class CheckedStream(object):
-#     def __init__(self, stream):
-#         self.stream = stream
-#
-#     def read(self, n):
-#         buffer = self.stream.read(n)
-#
-#         if len(buffer) == 0:
-#             self.process.wait()
-#
-#             if self.process.returncode != 0:
-#                 raise subprocess.CalledProcessError(self.process.returncode, self.arguments)
-#
-#         return buffer
