@@ -19,7 +19,7 @@ def main():
     else:
         raise Exception('Unknown grep-mode:', parsed_arguments.grep_mode)
 
-    stdout = pipeline.stream()
+    stdout = pipeline.execute()
 
     while True:
         data = stdout.read(pybash.DEFAULT_BUFFER_SIZE)

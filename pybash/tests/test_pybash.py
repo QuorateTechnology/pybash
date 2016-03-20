@@ -9,7 +9,12 @@ import subprocess
 import tempfile
 
 
-class RandomDataTest(object):
+class BaseTest(object):
+    duplicate_counts = (2,)  # TODO: 1, 10, 100
+    modes = ('call', 'simple')
+
+
+class RandomDataTest(BaseTest):
     data = ''.join(chr(i) for i in random.RandomState(1).randint(256, size=1024 * 6))
     chunk_sizes = [1, 10, 100, 1000, 200, 20, 2, 30, 300]
     chunk_sizes.append(len(data) - sum(chunk_sizes))
@@ -107,62 +112,144 @@ class TestReadWriteThread(RandomDataTest):
             yield TestReadWriteThread._test_using_readable_generator_source, buffer_size
 
 
-class TestCat(RandomDataTest):
-    temporary_directory_path = None
+class FileBasedTest(BaseTest):
     source_file_path = None
 
+    def __init__(self):
+        self.actual_file_path = None
+        self.expected_file_path = None
+
+    def setup(self):
+        temporary_directory_path = tempfile.mkdtemp()
+        self.actual_file_path = os.path.join(temporary_directory_path, 'actual')
+        self.expected_file_path = os.path.join(temporary_directory_path, 'expected')
+
+    def teardown(self):
+        if self.actual_file_path is not None:
+            shutil.rmtree(os.path.dirname(self.actual_file_path))
+
+
+class TestCat(RandomDataTest, FileBasedTest):
     @staticmethod
     def setup_class():
-        TestCat.temporary_directory_path = tempfile.mkdtemp()
-        TestCat.source_file_path = os.path.join(TestCat.temporary_directory_path, 'source')
+        FileBasedTest.source_file_path = os.path.join(tempfile.mkdtemp(), 'source')
 
-        with open(TestCat.source_file_path, 'wb') as source_file:
+        with open(FileBasedTest.source_file_path, 'wb') as source_file:
             source_file.write(RandomDataTest.data)
 
     @staticmethod
     def teardown_class():
-        if TestCat.temporary_directory_path is not None:
-            shutil.rmtree(TestCat.temporary_directory_path)
+        if FileBasedTest.source_file_path is not None:
+            shutil.rmtree(os.path.dirname(FileBasedTest.source_file_path))
 
     @staticmethod
-    def _test_cat(operation, duplicate_count, buffer_size):
-        operation = operation((TestCat.source_file_path,) * duplicate_count, buffer_size=buffer_size)
+    def _test_operation(operation, duplicate_count, buffer_size):
+        operation = operation(None, (FileBasedTest.source_file_path,) * duplicate_count, buffer_size=buffer_size)
         expected = ''
 
         for _ in xrange(duplicate_count):
             expected += RandomDataTest.data
 
         assert len(expected) > 0
-        assert operation.stream().read() == expected
+        assert operation.execute().read() == expected
 
-    def test_call(self):
+    def test_operation(self):
         for operation in (pybash.PyBashCatCall, pybash.PyBashCatSimple):
-            for duplicate_count in (1, 2):
+            for duplicate_count in RandomDataTest.duplicate_counts:
                 for buffer_size in RandomDataTest.buffer_sizes:
-                    yield TestCat._test_cat, operation, duplicate_count, buffer_size
+                    yield TestCat._test_operation, operation, duplicate_count, buffer_size
 
     @staticmethod
-    def _test_shell_from_file(mode, duplicate_count, expected_file_path):
-        actual_file_path = os.path.join(TestCat.temporary_directory_path, 'actual')
-        assert subprocess.call(['python', '../pycat.py', '--mode', mode] +
-                               [TestCat.source_file_path] * duplicate_count + ['>', actual_file_path], shell=True) == 0
-        assert filecmp.cmp(actual_file_path, expected_file_path, shallow=False)
+    def _test_pipeline(pipeline_creator, duplicate_count):
+        input_file_paths = (FileBasedTest.source_file_path,) * duplicate_count
+        pipeline = pipeline_creator(input_file_paths)
+        expected = ''
 
-    @staticmethod
-    def _test_shell_from_stdin(mode, duplicate_count, expected_file_path):
-        actual_file_path = os.path.join(TestCat.temporary_directory_path, 'actual')
-        assert subprocess.call(['cat'] + [TestCat.source_file_path] * duplicate_count +
-                               ['|', 'python', '../pycat.py', '--mode', mode] + ['>', actual_file_path],
-                               shell=True) == 0
-        assert filecmp.cmp(actual_file_path, expected_file_path, shallow=False)
+        for _ in xrange(duplicate_count):
+            expected += RandomDataTest.data
+
+        assert len(expected) > 0
+        actual = pipeline.execute().read()
+        assert actual == expected, (len(actual), len(expected))
+
+    def test_pipeline(self):
+        pipeline_creators = (
+            lambda input_file_paths: pybash.PyBashPipeline().cat_call(*input_file_paths),
+            lambda input_file_paths: pybash.PyBashPipeline().cat_simple(*input_file_paths),
+            lambda input_file_paths: pybash.PyBashPipeline().cat_call(*input_file_paths).cat_simple(),
+            lambda input_file_paths: pybash.PyBashPipeline().cat_simple(*input_file_paths).cat_call(),
+            lambda input_file_paths: pybash.PyBashPipeline().cat_call(*input_file_paths).cat_call(),
+            lambda input_file_paths: pybash.PyBashPipeline().cat_simple(*input_file_paths).cat_simple(),
+        )
+
+        for pipeline_creator in pipeline_creators:
+            for duplicate_count in RandomDataTest.duplicate_counts:
+                yield TestCat._test_pipeline, pipeline_creator, duplicate_count
+
+    def _test_shell_create_expected(self, duplicate_count):
+        assert subprocess.call(
+            ' '.join(['cat'] + [FileBasedTest.source_file_path] * duplicate_count +
+                     ['>', self.expected_file_path]), shell=True) == 0
+
+    def _test_shell_from_file(self, duplicate_count, mode):
+        self._test_shell_create_expected(duplicate_count)
+        assert subprocess.call(
+            ' '.join(['python', '../pycat.py', '--mode', mode] + [FileBasedTest.source_file_path] * duplicate_count +
+                     ['>', self.actual_file_path]), shell=True) == 0
+        assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
 
     def test_shell_from_file(self):
-        expected_file_path = os.path.join(TestCat.temporary_directory_path, 'expected')
+        for duplicate_count in RandomDataTest.duplicate_counts:
+            for mode in BaseTest.modes:
+                yield TestCat._test_shell_from_file, duplicate_count, mode
 
-        for duplicate_count in (1, 2):
-            assert subprocess.call(['cat'] + [TestCat.source_file_path] * duplicate_count + ['>', expected_file_path],
-                                   shell=True) == 0
+    def _test_shell_from_stdin(self, duplicate_count, mode):
+        self._test_shell_create_expected(duplicate_count)
+        assert subprocess.call(
+            ' '.join(['cat'] + [FileBasedTest.source_file_path] * duplicate_count +
+                     ['|', 'python', '../pycat.py', '--mode', mode] + ['>', self.actual_file_path]), shell=True) == 0
+        assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
 
-            for mode in ('call', 'simple'):
-                yield TestCat._test_shell_from_file, mode, duplicate_count, expected_file_path
-                yield TestCat._test_shell_from_stdin, mode, duplicate_count, expected_file_path
+    def test_shell_from_stdin(self):
+        for duplicate_count in RandomDataTest.duplicate_counts:
+            for mode in BaseTest.modes:
+                yield TestCat._test_shell_from_stdin, duplicate_count, mode
+
+
+class TestGrep(FileBasedTest):
+    # TODO: test operation
+    # TODO: test pipeline
+
+    @staticmethod
+    def setup_class():
+        FileBasedTest.source_file_path = os.path.join(os.path.dirname(__file__), 'lorem_ipsum.txt')
+
+    def _create_expected(self, duplicate_count):
+        source_file_paths = ' '.join((FileBasedTest.source_file_path,) * duplicate_count)
+        assert subprocess.call('grep "" %s > %s' % (source_file_paths, self.expected_file_path), shell=True) == 0
+        return source_file_paths
+
+    def _test_shell_from_file(self, duplicate_count, cat_mode, grep_mode):
+        source_file_paths = self._create_expected(duplicate_count)
+        assert subprocess.call(
+            'python ../pygrep.py --cat-mode %s --grep-mode %s "" %s > %s' %
+            (cat_mode, grep_mode, source_file_paths, self.actual_file_path), shell=True) == 0
+        assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
+
+    def _test_shell_from_stdin(self, duplicate_count, grep_mode):
+        source_file_paths = self._create_expected(duplicate_count)
+        assert subprocess.call(
+            'cat %s | python ../pygrep.py --grep-mode %s "" > %s' %
+            (source_file_paths, grep_mode, self.actual_file_path), shell=True) == 0
+        assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
+
+    def test_shell_from_file(self):
+        for duplicate_count in RandomDataTest.duplicate_counts:
+            for grep_mode in BaseTest.modes:
+                for cat_mode in BaseTest.modes:
+                    yield TestGrep._test_shell_from_file, duplicate_count, cat_mode, grep_mode
+
+    def test_shell_from_stdin(self):
+        for duplicate_count in RandomDataTest.duplicate_counts:
+            for grep_mode in BaseTest.modes:
+                yield TestGrep._test_shell_from_stdin, duplicate_count, grep_mode

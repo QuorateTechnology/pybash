@@ -17,9 +17,9 @@ def get_standard_input_pipeline(source_file_paths, mode):
     if len(source_file_paths) == 0:
         pipeline = PyBashPipeline.from_stream(sys.stdin)
     elif mode == 'call':
-        pipeline = PyBashPipeline.cat_call(*source_file_paths)
+        pipeline = PyBashPipeline().cat_call(*source_file_paths)
     elif mode == 'simple':
-        pipeline = PyBashPipeline.cat_simple(*source_file_paths)
+        pipeline = PyBashPipeline().cat_simple(*source_file_paths)
     else:
         raise Exception('Unknown mode:', mode)
 
@@ -27,35 +27,35 @@ def get_standard_input_pipeline(source_file_paths, mode):
 
 
 class PyBashPipeline(object):
-    def __init__(self, head):
-        self.head = head
+    def __init__(self, input_operation=None):
+        self.head = input_operation
 
     @staticmethod
-    def from_stream(source):
-        return PyBashPipeline(PyBashInputStream(source))
-
-    @staticmethod
-    def cat_call(*input_file_paths):
-        return PyBashPipeline(PyBashCatCall(input_file_paths))
-
-    @staticmethod
-    def cat_simple(*input_file_paths):
-        return PyBashPipeline(PyBashCatSimple(input_file_paths))
+    def from_stream(input_stream):
+        return PyBashPipeline(PyBashInputStream(input_stream))
 
     def call(self, *arguments):
         self.head = PyBashCall(self.head, arguments)
         return self
 
-    def grep_call(self, pattern):
-        self.head = PyBashGrepCall(self.head, pattern)
+    def cat_call(self, *input_file_paths):
+        self.head = PyBashCatCall(self.head, input_file_paths)
         return self
 
-    def grep_simple(self, pattern):
-        self.head = PyBashGrepSimple(self.head, pattern)
+    def cat_simple(self, *input_file_paths):
+        self.head = PyBashCatSimple(self.head, input_file_paths)
         return self
 
-    def stream(self):
-        return self.head.stream()
+    def grep_call(self, pattern, *input_file_paths):
+        self.head = PyBashGrepCall(self.head, pattern, input_file_paths)
+        return self
+
+    def grep_simple(self, pattern, *input_file_paths):
+        self.head = PyBashGrepSimple(self.head, pattern, input_file_paths)
+        return self
+
+    def execute(self):
+        return self.head.execute()
 
 
 class ReadableGenerator(object):
@@ -99,7 +99,7 @@ class PyBashOperation(object):
         assert source_may_be_none or source is not None
         self.source = source
 
-    def stream(self):
+    def execute(self):
         raise NotImplementedError()
 
 
@@ -108,7 +108,7 @@ class PyBashInputStream(PyBashOperation):
         super(PyBashInputStream, self).__init__(None, source_may_be_none=True)
         self.input_stream = input_stream
 
-    def stream(self):
+    def execute(self):
         return self.input_stream
 
 
@@ -120,12 +120,12 @@ class PyBashCall(PyBashOperation):
         self.process = None
         self.thread = None
 
-    def stream(self):
+    def execute(self):
         if self.source is None:
             stdin = subprocess.PIPE
             source = None
         else:
-            stdin = self.source.stream()
+            stdin = self.source.execute()
 
             if hasattr(stdin, 'fileno'):
                 source = None
@@ -146,19 +146,26 @@ class PyBashCall(PyBashOperation):
 
 
 class PyBashCatCall(PyBashCall):
-    def __init__(self, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
-        super(PyBashCatCall, self).__init__(None, ('cat',) + input_file_paths, source_may_be_none=True,
+    def __init__(self, source, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
+        assert (source is None and len(input_file_paths) > 0) or \
+               (source is not None and len(input_file_paths) == 0)
+        super(PyBashCatCall, self).__init__(source, ('cat',) + input_file_paths, source_may_be_none=True,
                                             buffer_size=buffer_size)
 
 
 class PyBashGrepCall(PyBashCall):
-    def __init__(self, source, pattern, buffer_size=DEFAULT_BUFFER_SIZE):
-        super(PyBashGrepCall, self).__init__(source, ('grep', pattern), buffer_size=buffer_size)
+    def __init__(self, source, pattern, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
+        assert (source is None and len(input_file_paths) > 0) or \
+               (source is not None and len(input_file_paths) == 0)
+        super(PyBashGrepCall, self).__init__(source, ('grep', pattern) + input_file_paths, source_may_be_none=True,
+                                             buffer_size=buffer_size)
 
 
 class PyBashCatSimple(PyBashOperation):
-    def __init__(self, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
-        super(PyBashCatSimple, self).__init__(None, source_may_be_none=True)
+    def __init__(self, source, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
+        assert (source is None and len(input_file_paths) > 0) or \
+               (source is not None and len(input_file_paths) == 0)
+        super(PyBashCatSimple, self).__init__(source, source_may_be_none=True)
         self.input_file_paths = input_file_paths
         self.buffer_size = buffer_size
 
@@ -176,14 +183,42 @@ class PyBashCatSimple(PyBashOperation):
 
                     yield data
 
-    def stream(self):
-        return ReadableGenerator(self._generator())
+    def execute(self):
+        if self.source is None:
+            return ReadableGenerator(self._generator())
+        else:
+            return self.source.execute()
 
 
 class PyBashGrepSimple(PyBashOperation):
-    def __init__(self, source, pattern):
-        super(PyBashGrepSimple, self).__init__(source)
+    def __init__(self, source, pattern, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
+        assert (source is None and len(input_file_paths) > 0) or \
+               (source is not None and len(input_file_paths) == 0)
+        super(PyBashGrepSimple, self).__init__(source, source_may_be_none=True)
         self.pattern = re.compile(pattern)
+        self.input_file_paths = input_file_paths
+        self.buffer_size = buffer_size
 
-    def stream(self):
-        return ReadableGenerator(line for line in self.source.stream() if self.pattern.search(line) is not None)
+    def _generator_from_files(self):
+        for input_file_path in self.input_file_paths:
+            input_file_path = os.path.expanduser(input_file_path)
+            input_file_path = os.path.realpath(input_file_path)
+
+            with open(input_file_path, 'rt') as input_file:
+                for line in input_file:
+                    if self.pattern.search(line) is not None:
+                        if len(self.input_file_paths) > 0:
+                            yield '%s: %s' % (input_file_path, line)
+                        else:
+                            yield line
+
+    def _generator_from_source(self):
+        for line in self.source.execute():
+            if self.pattern.search(line) is not None:
+                yield line
+
+    def execute(self):
+        if self.source is None:
+            return ReadableGenerator(self._generator_from_files())
+        else:
+            return ReadableGenerator(self._generator_from_source())
