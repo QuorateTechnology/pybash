@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import sys
 import threading
 
 # TODO: .kaldi-binary(woth, kaldi, options)
@@ -8,12 +9,30 @@ import threading
 # TODO: logging
 # TODO: make fastest version (call vs. simple) default, use argument to use alternate instead of two separate methods
 
+
 DEFAULT_BUFFER_SIZE = 4096
+
+
+def get_standard_input_pipeline(source_file_paths, mode):
+    if len(source_file_paths) == 0:
+        pipeline = PyBashPipeline.from_stream(sys.stdin)
+    elif mode == 'call':
+        pipeline = PyBashPipeline.cat_call(*source_file_paths)
+    elif mode == 'simple':
+        pipeline = PyBashPipeline.cat_simple(*source_file_paths)
+    else:
+        raise Exception('Unknown mode:', mode)
+
+    return pipeline
 
 
 class PyBashPipeline(object):
     def __init__(self, head):
         self.head = head
+
+    @staticmethod
+    def from_stream(source):
+        return PyBashPipeline(PyBashInputStream(source))
 
     @staticmethod
     def cat_call(*input_file_paths):
@@ -82,6 +101,15 @@ class PyBashOperation(object):
 
     def stream(self):
         raise NotImplementedError()
+
+
+class PyBashInputStream(PyBashOperation):
+    def __init__(self, input_stream):
+        super(PyBashInputStream, self).__init__(None, source_may_be_none=True)
+        self.input_stream = input_stream
+
+    def stream(self):
+        return self.input_stream
 
 
 class PyBashCall(PyBashOperation):

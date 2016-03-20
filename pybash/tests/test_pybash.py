@@ -142,18 +142,27 @@ class TestCat(RandomDataTest):
                     yield TestCat._test_cat, operation, duplicate_count, buffer_size
 
     @staticmethod
-    def _test_shell(mode, duplicate_count, expected_file_path):
-        actual_file_path = os.path.join(TestCat.temporary_directory_path, 'destination')
+    def _test_shell_from_file(mode, duplicate_count, expected_file_path):
+        actual_file_path = os.path.join(TestCat.temporary_directory_path, 'actual')
         assert subprocess.call(['python', '../pycat.py', '--mode', mode] +
                                [TestCat.source_file_path] * duplicate_count + ['>', actual_file_path], shell=True) == 0
         assert filecmp.cmp(actual_file_path, expected_file_path, shallow=False)
 
-    def test_shell(self):
+    @staticmethod
+    def _test_shell_from_stdin(mode, duplicate_count, expected_file_path):
+        actual_file_path = os.path.join(TestCat.temporary_directory_path, 'actual')
+        assert subprocess.call(['cat'] + [TestCat.source_file_path] * duplicate_count +
+                               ['|', 'python', '../pycat.py', '--mode', mode] + ['>', actual_file_path],
+                               shell=True) == 0
+        assert filecmp.cmp(actual_file_path, expected_file_path, shallow=False)
+
+    def test_shell_from_file(self):
         expected_file_path = os.path.join(TestCat.temporary_directory_path, 'expected')
 
         for duplicate_count in (1, 2):
-            assert subprocess.call(['cat'] + [TestCat.source_file_path] * duplicate_count +
-                                   ['>', expected_file_path], shell=True) == 0
+            assert subprocess.call(['cat'] + [TestCat.source_file_path] * duplicate_count + ['>', expected_file_path],
+                                   shell=True) == 0
 
             for mode in ('call', 'simple'):
-                yield TestCat._test_shell, mode, duplicate_count, expected_file_path
+                yield TestCat._test_shell_from_file, mode, duplicate_count, expected_file_path
+                yield TestCat._test_shell_from_stdin, mode, duplicate_count, expected_file_path
