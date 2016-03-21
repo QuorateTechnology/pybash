@@ -10,6 +10,9 @@ import subprocess
 import tempfile
 
 
+# TODO: for all pipelines, check executing the pipeline's representation has same effects as executing the pipeline
+
+
 class BaseTest(object):
     duplicate_counts = (1, 2, 10, 100)
     modes = ('call', 'simple')

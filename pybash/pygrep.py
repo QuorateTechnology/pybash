@@ -25,5 +25,5 @@ def main():
     pipeline.execute(sys.stdout)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

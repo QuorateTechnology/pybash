@@ -11,12 +11,21 @@ import threading
 
 
 class PyBashPipeline(object):
-    def __init__(self, input_operation=None):
+    def __init__(self, input_operation=None, add_to_operations=True):
         self.head = input_operation
+        self.operations = [input_operation] if add_to_operations and input_operation is not None else []
+
+    def _add(self, operation):
+        self.head = operation
+        self.operations.append(operation)
+        return self
+
+    def __repr__(self):
+        return ' | '.join(repr(operation) for operation in self.operations)
 
     @classmethod
     def from_stream(cls, input_stream):
-        return cls(PyBashInputStream(input_stream))
+        return cls(PyBashInputStream(input_stream), add_to_operations=False)
 
     def call(self, *arguments):
         self.head = PyBashCall(self.head, arguments)
@@ -74,6 +83,9 @@ class PyBashOperation(object):
         assert source_may_be_none or source is not None
         self.source = source
 
+    def __repr(self):
+        raise NotImplementedError()
+
     def execute(self):
         raise NotImplementedError()
 
@@ -95,6 +107,9 @@ class PyBashCall(PyBashOperation):
         self.process = None
         self.thread = None
 
+    def __repr(self):
+        return self.arguments if isinstance(self.arguments, str) else ' '.join(self.arguments)
+
     @staticmethod
     def flags(**kwargs):
         return tuple('--%s=%s' % (key, value) for key, value in kwargs.iteritems() if not key.startswith('_'))
@@ -115,10 +130,8 @@ class PyBashCall(PyBashOperation):
         self.process = subprocess.Popen(self.arguments, bufsize=self.buffer_size, stdin=stdin, stdout=subprocess.PIPE)
 
         if source is not None:
-            name = self.arguments[0] + '_read_write_thread'
-            self.thread = threading.Thread(
-                target=common.read_write, name=name, args=(source, self.process.stdin),
-                kwargs=dict(buffer_size=self.buffer_size))
+            self.thread = threading.Thread(target=common.read_write, name=self.arguments[0] + '_read_write_thread',
+                                           args=(source, self.process.stdin), kwargs=dict(buffer_size=self.buffer_size))
             self.thread.daemon = True
             self.thread.start()
 
@@ -149,6 +162,9 @@ class PyBashCatSimple(PyBashOperation):
         self.input_file_paths = input_file_paths
         self.buffer_size = buffer_size
 
+    def __repr(self):
+        return 'python pycat.py' + (' ' if len(self.input_file_paths) > 0 else '') + ' '.join(self.input_file_paths)
+
     def _generator(self):
         for input_file_path in self.input_file_paths:
             input_file_path = os.path.expanduser(input_file_path)
@@ -175,9 +191,14 @@ class PyBashGrepSimple(PyBashOperation):
         assert (source is None and len(input_file_paths) > 0) or \
                (source is not None and len(input_file_paths) == 0)
         super(PyBashGrepSimple, self).__init__(source, source_may_be_none=True)
-        self.pattern = re.compile(pattern)
+        self.pattern = pattern
+        self.compiled_pattern = re.compile(pattern)
         self.input_file_paths = input_file_paths
         self.buffer_size = buffer_size
+
+    def __repr(self):
+        return 'python pycat.py ' + self.pattern + (' ' if len(self.input_file_paths) > 0 else '') + \
+               ' '.join(self.input_file_paths)
 
     def _generator_from_files(self):
         for input_file_path in self.input_file_paths:
@@ -186,7 +207,7 @@ class PyBashGrepSimple(PyBashOperation):
 
             with open(input_file_path, 'rt') as input_file:
                 for line in input_file:
-                    if self.pattern.search(line) is not None:
+                    if self.compiled_pattern.search(line) is not None:
                         if len(self.input_file_paths) > 1:
                             yield '%s:%s' % (input_file_path, line)
                         else:
@@ -194,7 +215,7 @@ class PyBashGrepSimple(PyBashOperation):
 
     def _generator_from_source(self):
         for line in self.source.execute():
-            if self.pattern.search(line) is not None:
+            if self.compiled_pattern.search(line) is not None:
                 yield line
 
     def execute(self):
