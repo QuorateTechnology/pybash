@@ -13,6 +13,14 @@ class BaseTest(object):
     duplicate_counts = (2,)  # TODO: 1, 10, 100
     modes = ('call', 'simple')
 
+    @staticmethod
+    def _script_abs_path(script_name):
+        return os.path.realpath(os.path.join(os.path.dirname(__file__), '..', script_name))
+
+    def _assert_shell_call(self, command):
+        print 'subprocess:', command
+        assert subprocess.call(command, shell=True) == 0
+
 
 class RandomDataTest(BaseTest):
     data = ''.join(chr(i) for i in random.RandomState(1).randint(256, size=1024 * 6))
@@ -187,15 +195,15 @@ class TestCat(RandomDataTest, FileBasedTest):
                 yield TestCat._test_pipeline, pipeline_creator, duplicate_count
 
     def _test_shell_create_expected(self, duplicate_count):
-        assert subprocess.call(
-            ' '.join(['cat'] + [FileBasedTest.source_file_path] * duplicate_count +
-                     ['>', self.expected_file_path]), shell=True) == 0
+        source_file_paths = ' '.join((FileBasedTest.source_file_path,) * duplicate_count)
+        self._assert_shell_call('cat %s > %s' % (source_file_paths, self.expected_file_path))
+        return source_file_paths
 
     def _test_shell_from_file(self, duplicate_count, mode):
-        self._test_shell_create_expected(duplicate_count)
-        assert subprocess.call(
-            ' '.join(['python', '../pycat.py', '--mode', mode] + [FileBasedTest.source_file_path] * duplicate_count +
-                     ['>', self.actual_file_path]), shell=True) == 0
+        source_file_paths = self._test_shell_create_expected(duplicate_count)
+        self._assert_shell_call(
+            'python %s --mode %s %s > %s' %
+            (BaseTest._script_abs_path('pycat.py'), mode, source_file_paths, self.actual_file_path))
         assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
 
     def test_shell_from_file(self):
@@ -204,10 +212,10 @@ class TestCat(RandomDataTest, FileBasedTest):
                 yield TestCat._test_shell_from_file, duplicate_count, mode
 
     def _test_shell_from_stdin(self, duplicate_count, mode):
-        self._test_shell_create_expected(duplicate_count)
-        assert subprocess.call(
-            ' '.join(['cat'] + [FileBasedTest.source_file_path] * duplicate_count +
-                     ['|', 'python', '../pycat.py', '--mode', mode] + ['>', self.actual_file_path]), shell=True) == 0
+        source_file_paths = self._test_shell_create_expected(duplicate_count)
+        self._assert_shell_call(
+            'cat %s | python %s --mode %s > %s' %
+            (source_file_paths, BaseTest._script_abs_path('pycat.py'), mode, self.actual_file_path))
         assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
 
     def test_shell_from_stdin(self):
@@ -226,21 +234,21 @@ class TestGrep(FileBasedTest):
 
     def _create_expected(self, duplicate_count):
         source_file_paths = ' '.join((FileBasedTest.source_file_path,) * duplicate_count)
-        assert subprocess.call('grep "" %s > %s' % (source_file_paths, self.expected_file_path), shell=True) == 0
+        self._assert_shell_call('grep "" %s > %s' % (source_file_paths, self.expected_file_path))
         return source_file_paths
 
     def _test_shell_from_file(self, duplicate_count, cat_mode, grep_mode):
         source_file_paths = self._create_expected(duplicate_count)
-        assert subprocess.call(
-            'python ../pygrep.py --cat-mode %s --grep-mode %s "" %s > %s' %
-            (cat_mode, grep_mode, source_file_paths, self.actual_file_path), shell=True) == 0
+        self._assert_shell_call(
+            'python %s --cat-mode %s --grep-mode %s "" %s > %s' %
+            (BaseTest._script_abs_path('pygrep.py'), cat_mode, grep_mode, source_file_paths, self.actual_file_path))
         assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
 
     def _test_shell_from_stdin(self, duplicate_count, grep_mode):
         source_file_paths = self._create_expected(duplicate_count)
-        assert subprocess.call(
-            'cat %s | python ../pygrep.py --grep-mode %s "" > %s' %
-            (source_file_paths, grep_mode, self.actual_file_path), shell=True) == 0
+        self._assert_shell_call(
+            'cat %s | python %s --grep-mode %s "" > %s' %
+            (source_file_paths, BaseTest._script_abs_path('pygrep.py'), grep_mode, self.actual_file_path))
         assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
 
     def test_shell_from_file(self):
