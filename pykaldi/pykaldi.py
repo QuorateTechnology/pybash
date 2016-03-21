@@ -23,7 +23,7 @@ class PyKaldiPasteFeats(pybash.PyBashCall):
     def __init__(self, source, in_rs, out_w, binary=True, length_tolerance=0, config='', print_args=True, verbose=0,
                  _buffer_size=common.DEFAULT_BUFFER_SIZE):
         super(PyKaldiPasteFeats, self).__init__(
-            source, ('paste-feats',) + pybash.PyBashCall.flags(**self.__init__.actual_kwargs) + in_rs + (out_w,),
+            source, ('paste-feats',) + pybash.PyBashCall.flags(**self.__init__.actual_kwargs) + tuple(in_rs) + (out_w,),
             source_may_be_none=True, buffer_size=_buffer_size)
 
 
