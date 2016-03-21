@@ -1,7 +1,6 @@
 import os
 import re
 import subprocess
-import sys
 import threading
 
 # TODO: .kaldi-binary(woth, kaldi, options)
@@ -11,19 +10,6 @@ import threading
 
 
 DEFAULT_BUFFER_SIZE = 4096
-
-
-def get_standard_input_pipeline(source_file_paths, mode):
-    if len(source_file_paths) == 0:
-        pipeline = PyBashPipeline.from_stream(sys.stdin)
-    elif mode == 'call':
-        pipeline = PyBashPipeline().cat_call(*source_file_paths)
-    elif mode == 'simple':
-        pipeline = PyBashPipeline().cat_simple(*source_file_paths)
-    else:
-        raise Exception('Unknown mode:', mode)
-
-    return pipeline
 
 
 class PyBashPipeline(object):
@@ -207,8 +193,8 @@ class PyBashGrepSimple(PyBashOperation):
             with open(input_file_path, 'rt') as input_file:
                 for line in input_file:
                     if self.pattern.search(line) is not None:
-                        if len(self.input_file_paths) > 0:
-                            yield '%s: %s' % (input_file_path, line)
+                        if len(self.input_file_paths) > 1:
+                            yield '%s:%s' % (input_file_path, line)
                         else:
                             yield line
 

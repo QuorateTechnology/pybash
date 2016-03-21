@@ -194,13 +194,13 @@ class TestCat(RandomDataTest, FileBasedTest):
             for duplicate_count in RandomDataTest.duplicate_counts:
                 yield TestCat._test_pipeline, pipeline_creator, duplicate_count
 
-    def _test_shell_create_expected(self, duplicate_count):
+    def _test_shell_create_expected(self, duplicate_count, command_format):
         source_file_paths = ' '.join((FileBasedTest.source_file_path,) * duplicate_count)
-        self._assert_shell_call('cat %s > %s' % (source_file_paths, self.expected_file_path))
+        self._assert_shell_call(command_format % (source_file_paths, self.expected_file_path))
         return source_file_paths
 
     def _test_shell_from_file(self, duplicate_count, mode):
-        source_file_paths = self._test_shell_create_expected(duplicate_count)
+        source_file_paths = self._test_shell_create_expected(duplicate_count, 'cat %s > %s')
         self._assert_shell_call(
             'python %s --mode %s %s > %s' %
             (BaseTest._script_abs_path('pycat.py'), mode, source_file_paths, self.actual_file_path))
@@ -212,7 +212,7 @@ class TestCat(RandomDataTest, FileBasedTest):
                 yield TestCat._test_shell_from_file, duplicate_count, mode
 
     def _test_shell_from_stdin(self, duplicate_count, mode):
-        source_file_paths = self._test_shell_create_expected(duplicate_count)
+        source_file_paths = self._test_shell_create_expected(duplicate_count, 'cat %s | cat > %s')
         self._assert_shell_call(
             'cat %s | python %s --mode %s > %s' %
             (source_file_paths, BaseTest._script_abs_path('pycat.py'), mode, self.actual_file_path))
@@ -227,37 +227,37 @@ class TestCat(RandomDataTest, FileBasedTest):
 class TestGrep(FileBasedTest):
     # TODO: test operation
     # TODO: test pipeline
+    # TODO: test with non-empty patterns!
 
     @staticmethod
     def setup_class():
         FileBasedTest.source_file_path = os.path.join(os.path.dirname(__file__), 'lorem_ipsum.txt')
 
-    def _create_expected(self, duplicate_count):
+    def _create_expected(self, duplicate_count, command_format):
         source_file_paths = ' '.join((FileBasedTest.source_file_path,) * duplicate_count)
-        self._assert_shell_call('grep "" %s > %s' % (source_file_paths, self.expected_file_path))
+        self._assert_shell_call(command_format % (source_file_paths, self.expected_file_path))
         return source_file_paths
 
-    def _test_shell_from_file(self, duplicate_count, cat_mode, grep_mode):
-        source_file_paths = self._create_expected(duplicate_count)
+    def _test_shell_from_file(self, duplicate_count, mode):
+        source_file_paths = self._create_expected(duplicate_count, 'grep "" %s > %s')
         self._assert_shell_call(
-            'python %s --cat-mode %s --grep-mode %s "" %s > %s' %
-            (BaseTest._script_abs_path('pygrep.py'), cat_mode, grep_mode, source_file_paths, self.actual_file_path))
-        assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
-
-    def _test_shell_from_stdin(self, duplicate_count, grep_mode):
-        source_file_paths = self._create_expected(duplicate_count)
-        self._assert_shell_call(
-            'cat %s | python %s --grep-mode %s "" > %s' %
-            (source_file_paths, BaseTest._script_abs_path('pygrep.py'), grep_mode, self.actual_file_path))
+            'python %s --mode %s "" %s > %s' %
+            (BaseTest._script_abs_path('pygrep.py'), mode, source_file_paths, self.actual_file_path))
         assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
 
     def test_shell_from_file(self):
         for duplicate_count in RandomDataTest.duplicate_counts:
-            for grep_mode in BaseTest.modes:
-                for cat_mode in BaseTest.modes:
-                    yield TestGrep._test_shell_from_file, duplicate_count, cat_mode, grep_mode
+            for mode in BaseTest.modes:
+                yield TestGrep._test_shell_from_file, duplicate_count, mode
+
+    def _test_shell_from_stdin(self, duplicate_count, mode):
+        source_file_paths = self._create_expected(duplicate_count, 'cat %s | grep "" > %s')
+        self._assert_shell_call(
+            'cat %s | python %s --mode %s "" > %s' %
+            (source_file_paths, BaseTest._script_abs_path('pygrep.py'), mode, self.actual_file_path))
+        assert filecmp.cmp(self.actual_file_path, self.expected_file_path, shallow=False)
 
     def test_shell_from_stdin(self):
         for duplicate_count in RandomDataTest.duplicate_counts:
-            for grep_mode in BaseTest.modes:
-                yield TestGrep._test_shell_from_stdin, duplicate_count, grep_mode
+            for mode in BaseTest.modes:
+                yield TestGrep._test_shell_from_stdin, duplicate_count, mode

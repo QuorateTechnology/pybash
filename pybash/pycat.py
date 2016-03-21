@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import argparse
+import common
 import pybash
 import sys
 
@@ -12,15 +13,18 @@ def main():
     argument_parser.add_argument('source_file_paths', nargs='*')
     argument_parser.add_argument('--mode', default='simple')
     parsed_arguments = argument_parser.parse_args()
-    stdout = pybash.get_standard_input_pipeline(parsed_arguments.source_file_paths, parsed_arguments.mode).execute()
 
-    while True:
-        data = stdout.read(pybash.DEFAULT_BUFFER_SIZE)
+    if len(parsed_arguments.source_file_paths) == 0:
+        pipeline = pybash.PyBashPipeline.from_stream(sys.stdin)
+    else:
+        pipeline = pybash.PyBashPipeline()
 
-        if len(data) == 0:
-            break
+    pipeline = common.lazy_switch(
+        'mode', parsed_arguments.mode,
+        call=lambda: pipeline.cat_call(*parsed_arguments.source_file_paths),
+        simple=lambda: pipeline.cat_simple(*parsed_arguments.source_file_paths))
 
-        sys.stdout.write(data)
+    common.pipeline_to_stdout(pipeline)
 
 
 if __name__ == "__main__":
