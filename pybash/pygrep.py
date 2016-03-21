@@ -22,7 +22,7 @@ def main():
         call=lambda: pipeline.grep_call(parsed_arguments.pattern, *parsed_arguments.source_file_paths),
         simple=lambda: pipeline.grep_simple(parsed_arguments.pattern, *parsed_arguments.source_file_paths))
 
-    common.pipeline_to_stdout(pipeline)
+    pipeline.execute(sys.stdout)
 
 
 if __name__ == "__main__":

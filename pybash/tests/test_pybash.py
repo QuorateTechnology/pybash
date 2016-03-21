@@ -1,3 +1,4 @@
+import common
 import filecmp
 import mock
 from numpy import random
@@ -10,7 +11,7 @@ import tempfile
 
 
 class BaseTest(object):
-    duplicate_counts = (2,)  # TODO: 1, 10, 100
+    duplicate_counts = (1, 2, 10, 100)
     modes = ('call', 'simple')
 
     @staticmethod
@@ -28,8 +29,8 @@ class RandomDataTest(BaseTest):
     chunk_sizes.append(len(data) - sum(chunk_sizes))
     assert all(chunk_size > 0 for chunk_size in chunk_sizes)
     assert sum(chunk_sizes) == len(data)
-    buffer_sizes = (1, 2, pybash.DEFAULT_BUFFER_SIZE - 1, pybash.DEFAULT_BUFFER_SIZE, pybash.DEFAULT_BUFFER_SIZE + 1,
-                    pybash.DEFAULT_BUFFER_SIZE * 2)
+    buffer_sizes = (1, 2, common.DEFAULT_BUFFER_SIZE - 1, common.DEFAULT_BUFFER_SIZE, common.DEFAULT_BUFFER_SIZE + 1,
+                    common.DEFAULT_BUFFER_SIZE * 2)
 
     @staticmethod
     def _generator():
@@ -94,7 +95,7 @@ class TestReadWriteThread(RandomDataTest):
         sink = StringIO.StringIO()
         sink.close = mock.MagicMock()
 
-        pybash.read_write_thread(source, sink, buffer_size=buffer_size)
+        common.read_write(source, sink, buffer_size=buffer_size)
 
         assert not source.closed
         assert sink.getvalue() == RandomDataTest.data
@@ -110,7 +111,7 @@ class TestReadWriteThread(RandomDataTest):
         sink = StringIO.StringIO()
         sink.close = mock.MagicMock()
 
-        pybash.read_write_thread(source, sink)
+        common.read_write(source, sink)
 
         assert sink.getvalue() == RandomDataTest.data
         sink.close.assert_called_with()

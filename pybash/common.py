@@ -1,20 +1,4 @@
-import contextlib
-import pybash
-import shutil
-import sys
-import tempfile
-
-
-@contextlib.contextmanager
-def temporary_directory():
-    path = None
-
-    try:
-        path = tempfile.mkdtemp()
-        yield path
-    finally:
-        if path is not None:
-            shutil.rmtree(path)
+DEFAULT_BUFFER_SIZE = 4096
 
 
 def lazy_switch(name, key, **kwargs):
@@ -26,13 +10,32 @@ def lazy_switch(name, key, **kwargs):
     return value()
 
 
-def pipeline_to_stdout(pipeline):
-    stdout = pipeline.execute()
-
+def read_write(source, sink, buffer_size=DEFAULT_BUFFER_SIZE, close_sink_on_completion=True):
     while True:
-        data = stdout.read(pybash.DEFAULT_BUFFER_SIZE)
+        data = source.read(buffer_size)
 
         if len(data) == 0:
             break
 
-        sys.stdout.write(data)
+        sink.write(data)
+
+    if close_sink_on_completion:
+        sink.close()
+
+
+def actual_kwargs():
+    """
+    Decorator that provides the wrapped function with an attribute 'actual_kwargs' containing just those keyword
+    arguments actually passed in to the function.
+
+    Based on code from  http://stackoverflow.com/a/1409284/127480
+    """
+
+    def decorator(function):
+        def inner(*args, **kwargs):
+            inner.actual_kwargs = kwargs
+            return function(*args, **kwargs)
+
+        return inner
+
+    return decorator

@@ -1,24 +1,22 @@
+import common
 import os
 import re
 import subprocess
 import threading
 
-# TODO: .kaldi-binary(woth, kaldi, options)
+
 # TODO: test with very large data: check memory usage, and compare call vs. simple speeds
 # TODO: logging
 # TODO: make fastest version (call vs. simple) default, use argument to use alternate instead of two separate methods
-
-
-DEFAULT_BUFFER_SIZE = 4096
 
 
 class PyBashPipeline(object):
     def __init__(self, input_operation=None):
         self.head = input_operation
 
-    @staticmethod
-    def from_stream(input_stream):
-        return PyBashPipeline(PyBashInputStream(input_stream))
+    @classmethod
+    def from_stream(cls, input_stream):
+        return cls(PyBashInputStream(input_stream))
 
     def call(self, *arguments):
         self.head = PyBashCall(self.head, arguments)
@@ -40,8 +38,11 @@ class PyBashPipeline(object):
         self.head = PyBashGrepSimple(self.head, pattern, input_file_paths)
         return self
 
-    def execute(self):
-        return self.head.execute()
+    def execute(self, output_stream=None):
+        if output_stream is None:
+            return self.head.execute()
+        else:
+            common.read_write(self.head.execute(), output_stream)
 
 
 class ReadableGenerator(object):
@@ -68,18 +69,6 @@ class ReadableGenerator(object):
         return data
 
 
-def read_write_thread(source, sink, buffer_size=DEFAULT_BUFFER_SIZE):
-    while True:
-        data = source.read(buffer_size)
-
-        if len(data) == 0:
-            break
-
-        sink.write(data)
-
-    sink.close()
-
-
 class PyBashOperation(object):
     def __init__(self, source, source_may_be_none=False):
         assert source_may_be_none or source is not None
@@ -99,12 +88,16 @@ class PyBashInputStream(PyBashOperation):
 
 
 class PyBashCall(PyBashOperation):
-    def __init__(self, source, arguments, source_may_be_none=False, buffer_size=DEFAULT_BUFFER_SIZE):
+    def __init__(self, source, arguments, source_may_be_none=False, buffer_size=common.DEFAULT_BUFFER_SIZE):
         super(PyBashCall, self).__init__(source, source_may_be_none=source_may_be_none)
         self.arguments = arguments
         self.buffer_size = buffer_size
         self.process = None
         self.thread = None
+
+    @staticmethod
+    def flags(**kwargs):
+        return tuple('--%s=%s' % (key, value) for key, value in kwargs.iteritems() if not key.startswith('_'))
 
     def execute(self):
         if self.source is None:
@@ -123,8 +116,9 @@ class PyBashCall(PyBashOperation):
 
         if source is not None:
             name = self.arguments[0] + '_read_write_thread'
-            self.thread = threading.Thread(target=read_write_thread, name=name, args=(source, self.process.stdin),
-                                           kwargs=dict(buffer_size=self.buffer_size))
+            self.thread = threading.Thread(
+                target=common.read_write, name=name, args=(source, self.process.stdin),
+                kwargs=dict(buffer_size=self.buffer_size))
             self.thread.daemon = True
             self.thread.start()
 
@@ -132,7 +126,7 @@ class PyBashCall(PyBashOperation):
 
 
 class PyBashCatCall(PyBashCall):
-    def __init__(self, source, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
+    def __init__(self, source, input_file_paths, buffer_size=common.DEFAULT_BUFFER_SIZE):
         assert (source is None and len(input_file_paths) > 0) or \
                (source is not None and len(input_file_paths) == 0)
         super(PyBashCatCall, self).__init__(source, ('cat',) + input_file_paths, source_may_be_none=True,
@@ -140,7 +134,7 @@ class PyBashCatCall(PyBashCall):
 
 
 class PyBashGrepCall(PyBashCall):
-    def __init__(self, source, pattern, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
+    def __init__(self, source, pattern, input_file_paths, buffer_size=common.DEFAULT_BUFFER_SIZE):
         assert (source is None and len(input_file_paths) > 0) or \
                (source is not None and len(input_file_paths) == 0)
         super(PyBashGrepCall, self).__init__(source, ('grep', pattern) + input_file_paths, source_may_be_none=True,
@@ -148,7 +142,7 @@ class PyBashGrepCall(PyBashCall):
 
 
 class PyBashCatSimple(PyBashOperation):
-    def __init__(self, source, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
+    def __init__(self, source, input_file_paths, buffer_size=common.DEFAULT_BUFFER_SIZE):
         assert (source is None and len(input_file_paths) > 0) or \
                (source is not None and len(input_file_paths) == 0)
         super(PyBashCatSimple, self).__init__(source, source_may_be_none=True)
@@ -177,7 +171,7 @@ class PyBashCatSimple(PyBashOperation):
 
 
 class PyBashGrepSimple(PyBashOperation):
-    def __init__(self, source, pattern, input_file_paths, buffer_size=DEFAULT_BUFFER_SIZE):
+    def __init__(self, source, pattern, input_file_paths, buffer_size=common.DEFAULT_BUFFER_SIZE):
         assert (source is None and len(input_file_paths) > 0) or \
                (source is not None and len(input_file_paths) == 0)
         super(PyBashGrepSimple, self).__init__(source, source_may_be_none=True)
