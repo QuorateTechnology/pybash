@@ -28,30 +28,37 @@ class PyBashPipeline(object):
         return cls(PyBashInputStream(input_stream), add_to_operations=False)
 
     def call(self, *arguments):
-        self.head = PyBashCall(self.head, arguments)
-        return self
+        return self._add(PyBashCall(self.head, arguments))
 
     def cat_call(self, *input_file_paths):
-        self.head = PyBashCatCall(self.head, input_file_paths)
-        return self
+        return self._add(PyBashCatCall(self.head, input_file_paths))
 
     def cat_simple(self, *input_file_paths):
-        self.head = PyBashCatSimple(self.head, input_file_paths)
-        return self
+        return self._add(PyBashCatSimple(self.head, input_file_paths))
 
     def grep_call(self, pattern, *input_file_paths):
-        self.head = PyBashGrepCall(self.head, pattern, input_file_paths)
-        return self
+        return self._add(PyBashGrepCall(self.head, pattern, input_file_paths))
 
     def grep_simple(self, pattern, *input_file_paths):
-        self.head = PyBashGrepSimple(self.head, pattern, input_file_paths)
-        return self
+        return self._add(PyBashGrepSimple(self.head, pattern, input_file_paths))
 
-    def execute(self, output_stream=None):
-        if output_stream is None:
+    @common.actual_kwargs()
+    def wc_call(self, input_file_paths, bytes=False, chars=False, lines=False, max_line_length=False, words=False,
+                buffer_size=common.DEFAULT_BUFFER_SIZE):
+        except_keys = 'input_file_paths'
+        return self._add(PyBashWcCall(self.head, input_file_paths, **self.wc_call.actual_kwargs_except(*except_keys)))
+
+    def execute(self, output=None):
+        if output is None:
             return self.head.execute()
+        elif isinstance(output, basestring):
+            with open(output, 'wb') as output_file:
+                common.read_write(self.head.execute(), output_file)
         else:
-            common.read_write(self.head.execute(), output_stream)
+            common.read_write(self.head.execute(), output)
+
+    def command(self, prefix='', suffix=''):
+        return prefix + repr(self) + suffix
 
 
 class ReadableGenerator(object):
@@ -107,12 +114,16 @@ class PyBashCall(PyBashOperation):
         self.process = None
         self.thread = None
 
-    def __repr(self):
+    def __repr__(self):
         return self.arguments if isinstance(self.arguments, str) else ' '.join(self.arguments)
 
     @staticmethod
     def flags(**kwargs):
-        return tuple('--%s=%s' % (key, value) for key, value in kwargs.iteritems() if not key.startswith('_'))
+        return tuple(('-%s %s' if len(key) == 1 else '--%s=%s') % (key, kwargs[key]) for key in sorted(kwargs.keys()))
+
+    @staticmethod
+    def actual_flags(function, *except_keys):
+        return PyBashCall.flags(**function.actual_kwargs_except(*except_keys))
 
     def execute(self):
         if self.source is None:
@@ -152,6 +163,17 @@ class PyBashGrepCall(PyBashCall):
                (source is not None and len(input_file_paths) == 0)
         super(PyBashGrepCall, self).__init__(source, ('grep', pattern) + input_file_paths, source_may_be_none=True,
                                              buffer_size=buffer_size)
+
+
+class PyBashWcCall(PyBashCall):
+    @common.actual_kwargs()
+    def __init__(self, source, input_file_paths, bytes=False, chars=False, lines=False, max_line_length=False,
+                 words=False, buffer_size=common.DEFAULT_BUFFER_SIZE):
+        assert (source is None and len(input_file_paths) > 0) or \
+               (source is not None and len(input_file_paths) == 0)
+        except_keys = 'source', 'input_file_paths', 'buffer_size'
+        super(PyBashWcCall, self).__init__(source, ('wc',) + PyBashCall.actual_flags(self.__init__, except_keys) +
+                                           input_file_paths, source_may_be_none=True, buffer_size=buffer_size)
 
 
 class PyBashCatSimple(PyBashOperation):

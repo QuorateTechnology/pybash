@@ -1,3 +1,6 @@
+import os
+import errno
+
 DEFAULT_BUFFER_SIZE = 4096
 
 
@@ -34,8 +37,23 @@ def actual_kwargs():
     def decorator(function):
         def inner(*args, **kwargs):
             inner.actual_kwargs = kwargs
+            inner.actual_kwargs_except = \
+                lambda keys: {key: value for key, value in kwargs.iteritems() if key not in keys}
             return function(*args, **kwargs)
 
         return inner
 
     return decorator
+
+
+def makedirs(path):
+    """
+    Ensures a directory (and all its parents) already exists without raising an exception if it does already exist.
+
+    Taken from http://stackoverflow.com/a/5032238/127480
+    """
+    try:
+        os.makedirs(path)
+    except OSError as exception:
+        if exception.errno != errno.EEXIST:
+            raise
